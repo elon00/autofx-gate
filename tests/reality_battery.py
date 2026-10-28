@@ -1,6 +1,40 @@
-"""
-QMOOSA Reality Check: Smoke Test, Regression & Sanitizer Harness
-"""
+"""Negative controls for the bounded offline diagnostic CLI."""
+import subprocess
+import unittest
+from pathlib import Path
 
-def test_pqc_math_invariants():
-    assert 0x55AA55AA55AA55AA€ô€À(€€€ÁÉ¥¹Ğ ‰mAMMtAE%¹Ù…É¥…¹ĞY•É¥™¥•¸ˆ¤()‘•˜Ñ•ÍÑ}½¹İ…å}ÑÉ…¹Í¥Ñ¥½¸ ¤è(€€€ÍÑ…Ñ”€ô€ÁàÔÕÔÕÔÕÕM(€€€ÍÈ€ô€¡ÍÑ…Ñ”€øø€Ä¤€˜€Áàİİİİİİİİ(€€€Í°€ô€¡ÍÑ…Ñ”€ğğ€Ä¤€˜€Áá(€€€¹•¥¡‰½ÉÌ€ôÍÈxÍ°(€€€¹•áÑ}ÍÑ…Ñ”€ô€¡ÍÑ…Ñ”€˜¹•¥¡‰½ÉÌ¤ğ€¡¹•¥¡‰½ÉÌ€˜€ÁàÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ¤(€€€…ÍÍ•ÉĞ¹•áÑ}ÍÑ…Ñ”€„ô€À(€€€ÁÉ¥¹Ğ ‰mAMMt½¹İ…äÕÑ½µ…Ñ½¸MÑ•ÀY•É¥™¥•¸ˆ¤()¥˜}}¹…µ•}|€ôô€}}µ…¥¹}|œè(€€€Ñ•ÍÑ}ÁÅ}µ…Ñ¡}¥¹Ù…É¥…¹ÑÌ ¤(€€€Ñ•ÍÑ}½¹İ…å}ÑÉ…¹Í¥Ñ¥½¸ ¤(€€€ÁÉ¥¹Ğ ‰mMUMMt±°€ÄÀÀ¼ÄÀÀI•…±¥Ñä¡•­ÌA…ÍÍ•¸)
+BINARY = Path(__file__).resolve().parents[1] / "target" / "debug" / "autofx-gate"
+
+
+def invoke(*args):
+    return subprocess.run([str(BINARY), *args], capture_output=True, text=True, timeout=10, check=False)
+
+
+class FailClosedTests(unittest.TestCase):
+    def assert_rejected(self, *args):
+        p = invoke(*args)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(p.stdout, "")
+        self.assertIn("offline diagnostic error", p.stderr)
+
+    def test_reject_negative_steps(self):
+        self.assert_rejected("--steps", "-1")
+
+    def test_reject_excessive_steps(self):
+        self.assert_rejected("--steps", "100001")
+
+    def test_reject_integer_overflow(self):
+        self.assert_rejected("--seed", "0x10000000000000000")
+
+    def test_reject_unknown_flag(self):
+        self.assert_rejected("--rpc", "https://example.invalid")
+
+    def test_reject_missing_value(self):
+        self.assert_rejected("--seed")
+
+    def test_reject_duplicate_flag(self):
+        self.assert_rejected("--steps", "1", "--steps", "2")
+
+
+if __name__ == "__main__":
+    unittest.main()
