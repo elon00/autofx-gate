@@ -1,37 +1,56 @@
-﻿import sys
-import time
+"""Real offline CLI regression tests. No RPC, PQC, or live settlement is exercised."""
+import json
+import subprocess
+import unittest
+from pathlib import Path
 
-def test_reality_check():
-    print("[1/5] Testing QuickNode Multi-Chain Global Relayer...")
-    assert True
-    print("      -> QuickNode Global Relayer: PASS")
+BINARY = Path(__file__).resolve().parents[1] / "target" / "debug" / "autofx-gate"
+MASK = (1 << 64) - 1
+MIX = 0x9E3779B97F4A7C15
 
-    print("[2/5] Verifying NIST PQC ML-KEM/ML-DSA Invariant Security Vault...")
-    entropy = 0x55AA55AA55AA55AA
-    assert entropy != 0
-    print("      -> Post-Quantum Cryptographic Integrity: PASS")
 
-    print("[3/5] Verifying Conway 2D Bitboard Non-Linear Invariant State Machine...")
-    state = 0x55AA55AA55AA55AA
-    for _ in range(10_000):
-        state = (state ^ ((state >> 7) | (state << 57)) ^ 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
-    assert state != 0
-    print("      -> Invariant State Verification: PASS")
+def invoke(*args):
+    return subprocess.run([str(BINARY), *map(str, args)], capture_output=True, text=True, timeout=10, check=False)
 
-    print("[4/5] Testing Protocol Operational Grid...")
-    grid = ["Core Consensus Layer", "Cross-Chain Relayers", "Decentralized Escrows", "Governance Attestations"]
-    for item in grid:
-        record = {"pillar": item, "status": 200, "invariant": "VERIFIED"}
-        assert record["status"] == 200
-    print("      -> Operational Invariant Grid: PASS")
 
-    print("[5/5] Testing Zero-Leakage Protocol Escrows...")
-    assert 1 + 1 == 2
-    print("      -> Zero-Bureaucracy Direct Impact Escrows: PASS")
+def reference(seed, steps):
+    state = seed
+    for _ in range(steps):
+        rotated = ((state >> 7) | (state << 57)) & MASK
+        state = (state ^ rotated ^ MIX) & MASK
+    return f"{state:016x}"
 
-    print("=======================================================")
-    print("[SUCCESS] Autofx Gate REALITY GATES PASSED // SCORE: 100/100")
-    print("=======================================================")
 
-if __name__ == '__main__':
-    test_reality_check()
+class OfflineDiagnosticTests(unittest.TestCase):
+    def test_zero_steps_identity(self):
+        p = invoke("--seed", "0x1234", "--steps", "0")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        data = json.loads(p.stdout)
+        self.assertEqual(data, {"mode": "offline-diagnostic", "steps": 0, "state_hex": "0000000000001234"})
+
+    def test_one_step_against_independent_reference(self):
+        p = invoke("--seed", "0x1234", "--steps", "1")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout)["state_hex"], reference(0x1234, 1))
+
+    def test_ten_thousand_steps_against_reference(self):
+        p = invoke()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        data = json.loads(p.stdout)
+        self.assertEqual(data["steps"], 10_000)
+        self.assertEqual(data["state_hex"], reference(0x55AA55AA55AA55AA, 10_000))
+
+    def test_repeated_runs_are_deterministic(self):
+        self.assertEqual(invoke("--seed", "7", "--steps", "42").stdout,
+                         invoke("--seed", "7", "--steps", "42").stdout)
+
+    def test_no_unverified_production_claims(self):
+        p = invoke("--steps", "1")
+        self.assertEqual(p.returncode, 0)
+        self.assertNotIn("100/100", p.stdout)
+        self.assertNotIn("FIPS", p.stdout)
+        self.assertNotIn("CONNECTED", p.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
