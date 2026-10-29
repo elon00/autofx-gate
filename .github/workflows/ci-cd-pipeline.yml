@@ -1,15 +1,31 @@
-﻿name: CI/CD Pipeline
-on: [push, pull_request]
+name: Offline Diagnostic Regression CI
+on:
+  push:
+    branches: [main, "audit/**"]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Smoke Tests
-        run: python tests/reality_check_harness.py
-      - name: CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+          persist-credentials: false
+      - name: Record tool versions
+        run: |
+          rustc --version
+          cargo --version
+          python3 --version
+      - name: Compile and run Rust unit tests without network dependencies
+        run: |
+          cargo test --offline
+          cargo build --offline
+      - name: Run real offline diagnostic and negative controls
+        run: |
+          python3 tests/reality_check_harness.py
+          python3 tests/reality_battery.py
+      - name: Check Python syntax
+        run: python3 -m py_compile tests/reality_check_harness.py tests/reality_battery.py
